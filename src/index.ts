@@ -13,6 +13,8 @@ export interface Config {
   adminQQ: string[]
   downloadPath: string
   weightUp: string[]
+  refuseWord: string[]
+  filterWord: string[]
   pageDisplay: number
   waitTime: number
   textMaxLen: number
@@ -35,6 +37,8 @@ export const Config: Schema<Config> = Schema.object({
   atQQ: Schema.boolean().default(false).description("回复消息附带 @发送者 [兼容操作]"),
   adminQQ: Schema.array(String).role("table").default([]).description("审核管理员QQ或标识码列表"),
   weightUp: Schema.array(String).role("table").default(["炸了", "坏了", "失效"]).description("关键词权重提升"),
+  refuseWord: Schema.array(String).role("table").default(["臭smm"]).description("当检测到关键字，拒绝提交"),
+  filterWord: Schema.array(String).role("table").default(["臭smm"]).description("当检测到关键字，过滤提交"),
   downloadPath: Schema.string().default("./data/smmfeedback/").description("图片保存位置"),
   pageDisplay: Schema.number().default(10).description("目录每页显示数量"),
   waitTime: Schema.number().default(120000).description("每次提交反馈需要等待的时间(毫秒)"),
@@ -396,7 +400,7 @@ export function apply(ctx: Context, config: Config) {
       if (!fs.existsSync(upath)) {
         fs.mkdirSync(upath, { recursive: true });
       }
-      const timestamp = (/* @__PURE__ */ new Date()).getTime();
+      const timestamp = (new Date()).getTime();
       const imagePath = path.join(upath, `${timestamp}.jpg`);
       const response = await ctx.http.get(imageUrl, { responseType: "stream" });
       const writer = fs.createWriteStream(imagePath);
@@ -472,7 +476,7 @@ export function apply(ctx: Context, config: Config) {
   };
   ctx.on("ready", () => {
   });
-  ctx.command("反馈.提交 <ask:text>").action(async ({ session }, ask) => {
+  ctx.command("反馈.提交 <ask:text>", '向作者提交新的反馈内容').action(async ({ session }, ask) => {
     let at = "";
     if (config.atQQ) {
       at = `<at id="${session.userId}" />`;
@@ -507,6 +511,30 @@ export function apply(ctx: Context, config: Config) {
     const msgList = h.select(msg, "text").map((item) => item.attrs.content);
     imgList = imgList.slice(0, config.imgMaxLen);
     msg = msgList.join("").substring(0, config.textMaxLen);
+
+    // 拦截内容
+    if (config.refuseWord.length) {
+      const isRefuse = config.refuseWord.some((str) => {
+        return msg.includes(str)
+      })
+      if (isRefuse) {
+        await session.send(at + `抱歉，您的内容有误无法提交。请整理后重新输入`);
+        return
+      }
+    }
+
+    // 过滤内容
+    if (config.filterWord.length) {
+      config.filterWord.forEach((str) => {
+        const regxp = new RegExp(str, 'g')
+        msg = msg.replace(regxp, '')
+      })
+      if (!msg.trim()) {
+        await session.send(at + `您似乎并没有提交任何内容...`);
+        return
+      }
+    }
+
     if (config.picDetection && config.Appid && config.key) {
       const dict = { err: 0 };
       const eventList = imgList.map((item, index) => {
@@ -579,7 +607,7 @@ export function apply(ctx: Context, config: Config) {
     userTemp.userIdList[session.userId] = +/* @__PURE__ */ new Date();
     await session.send(at + "反馈成功，过段时间可以发送 /反馈 回执 查看管理员的回复~");
   });
-  ctx.command("反馈.回执").action(async ({ session }) => {
+  ctx.command("反馈.回执", '查看反馈的记录').action(async ({ session }) => {
     let at = "";
     if (config.atQQ) {
       at = `<at id="${session.userId}" />`;
@@ -587,7 +615,7 @@ export function apply(ctx: Context, config: Config) {
     const { msg } = await feedback.getMyFeedback(session.userId, session, at);
     await session.send(msg);
   });
-  ctx.command("反馈.查看 <index:number>").action(async ({ session }, index) => {
+  ctx.command("反馈.查看 <index:number>", '查看指定反馈内容').action(async ({ session }, index) => {
     let at = "";
     if (config.atQQ) {
       at = `<at id="${session.userId}" />`;
@@ -595,7 +623,7 @@ export function apply(ctx: Context, config: Config) {
     const { msg } = await feedback.getMyFeedbackDetail(session.userId, index);
     return at + msg;
   });
-  ctx.command("反馈.下页").action(async ({ session }) => {
+  ctx.command("反馈.下页", '查看下页的反馈内容').action(async ({ session }) => {
     let at = "";
     if (config.atQQ) {
       at = `<at id="${session.userId}" />`;
@@ -603,7 +631,7 @@ export function apply(ctx: Context, config: Config) {
     const { msg } = await feedback.getMyFeedbackDownPage(session.userId, session, at);
     await session.send(at + msg);
   });
-  ctx.command("反馈.上页").action(async ({ session }) => {
+  ctx.command("反馈.上页", '查看上页的反馈内容').action(async ({ session }) => {
     let at = "";
     if (config.atQQ) {
       at = `<at id="${session.userId}" />`;
@@ -611,7 +639,7 @@ export function apply(ctx: Context, config: Config) {
     const { msg } = await feedback.getMyFeedbackUpPage(session.userId, session, at);
     await session.send(at + msg);
   });
-  ctx.command("反馈.跳页 <page:number>").action(async ({ session }, page) => {
+  ctx.command("反馈.跳页 <page:number>", '跳转指定页数反馈列表').action(async ({ session }, page) => {
     let at = "";
     if (config.atQQ) {
       at = `<at id="${session.userId}" />`;
@@ -619,7 +647,7 @@ export function apply(ctx: Context, config: Config) {
     const { msg } = await feedback.getMyFeedbackJumpPage(session.userId, page, session, at);
     await session.send(at + msg);
   });
-  ctx.command("反馈.待办").action(async ({ session }) => {
+  ctx.command("反馈.待办", '查看未处理的反馈列表').action(async ({ session }) => {
     let at = "";
     if (config.atQQ) {
       at = `<at id="${session.userId}" />`;
@@ -631,7 +659,7 @@ export function apply(ctx: Context, config: Config) {
     }
     await session.send(at + result.msg);
   });
-  ctx.command("反馈.完成").action(async ({ session }) => {
+  ctx.command("反馈.完成", '将未处理反馈设置为已处理').action(async ({ session }) => {
     let at = "";
     if (config.atQQ) {
       at = `<at id="${session.userId}" />`;
@@ -643,7 +671,7 @@ export function apply(ctx: Context, config: Config) {
     }
     await session.send(at + result.msg);
   });
-  ctx.command("反馈.留言 <msg:text>").action(async ({ session }, msg) => {
+  ctx.command("反馈.留言 <msg:text>", '对反馈的内容留言记录').action(async ({ session }, msg) => {
     let at = "";
     if (config.atQQ) {
       at = `<at id="${session.userId}" />`;

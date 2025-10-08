@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-smmcat-feedback",
   "description": "反馈工单系统",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
